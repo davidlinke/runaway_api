@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 const gtfs = require('gtfs');
+var moment = require('moment');
 const config = {
 	mongoUrl: 'mongodb://localhost:27017/gtfs',
 	agencies: [
@@ -30,7 +31,7 @@ db.on('error', err => console.log(err.message));
 db.on('connected', () => console.log('mongo connected'));
 db.on('disconnected', () => console.log('mongo disconnected'));
 
-// IMPORT GTFS DATA
+// IMPORT GTFS DATA, can probably run once a day or week
 // gtfs
 // 	.import(config)
 // 	.then(() => {
@@ -42,7 +43,6 @@ db.on('disconnected', () => console.log('mongo disconnected'));
 
 // Get Train Stops
 app.get('/stops', (req, res) => {
-	// res.json(gtfs.getStops);
 	gtfs
 		.getStops(
 			{
@@ -52,5 +52,87 @@ app.get('/stops', (req, res) => {
 		)
 		.then(stops => {
 			res.send(stops);
+		});
+});
+
+// Get Service ID For today
+app.get('/serviceid', (req, res) => {
+	const date = new Date();
+	const currentDate = moment(date).format('YYYYMMDD');
+	gtfs
+		.getCalendarDates({
+			date: currentDate
+		})
+		.then(calendars => {
+			res.send(calendars);
+		});
+});
+
+app.get('/stoptimes/:stop_id', (req, res) => {
+	const time = new Date();
+	const currentTime = moment(time).format('HH:mm:ss');
+	const offsetTime = moment(time)
+		.add(60, 'm')
+		.format('HH:mm:ss');
+	gtfs
+		.getStoptimes(
+			{
+				agency_key: 'Metro-North Railroad',
+				stop_id: req.params.stop_id,
+				departure_time: {
+					$gt: currentTime,
+					$lt: offsetTime
+				}
+			}
+			// {
+			// 	sort: { departure_time: 1 }
+			// }
+		)
+		.then(stoptimes => {
+			res.send(stoptimes);
+		});
+});
+
+app.get('/trip/:trip_id', (req, res) => {
+	gtfs
+		.getTrips({
+			agency_key: 'Metro-North Railroad',
+			trip_id: req.params.trip_id
+		})
+		.then(trips => {
+			res.send(trips);
+		});
+});
+
+app.get('/tripsbyserviceid/:service_id', (req, res) => {
+	gtfs
+		.getTrips({
+			agency_key: 'Metro-North Railroad',
+			service_id: req.params.service_id
+		})
+		.then(trips => {
+			res.send(trips);
+		});
+});
+
+app.get('/tripstops/:trip_id', (req, res) => {
+	gtfs
+		.getStoptimes({
+			agency_key: 'Metro-North Railroad',
+			trip_id: req.params.trip_id
+		})
+		.then(stoptimes => {
+			res.send(stoptimes);
+		});
+});
+
+app.get('/routes/:route_id', (req, res) => {
+	gtfs
+		.getRoutes({
+			agency_key: 'Metro-North Railroad',
+			route_id: req.params.route_id
+		})
+		.then(routes => {
+			res.send(routes);
 		});
 });
