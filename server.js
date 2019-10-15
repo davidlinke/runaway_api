@@ -272,6 +272,23 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 			});
 	};
 
+	const getTripStops = trip_id => {
+		return gtfs.getStoptimes(
+			{
+				agency_key: 'Metro-North Railroad',
+				trip_id: trip_id
+			},
+			{
+				_id: 0,
+				departure_time: 1,
+				stop_id: 1,
+				stop_sequence: 1,
+				track: 1,
+				departure_timestamp: 1
+			}
+		);
+	};
+
 	const calculateDuration = (start_time, end_time) => {
 		if (start_time < end_time) {
 			return end_time - start_time;
@@ -283,6 +300,8 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 	const promises = data.map(async trip => {
 		const stop_times = await getTripStopTime(trip);
 		const trip_info = await getTripInfo(trip.trip_id);
+		const trip_stops = await getTripStops(trip.trip_id);
+
 		return {
 			trip_id: trip.trip_id,
 			trip_headsign: trip_info.trip_headsign,
@@ -303,7 +322,8 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 			),
 			stop_sequence: trip.stop_sequence,
 			wheelchair_accessible: trip_info.wheelchair_accessible,
-			peak_offpeak: trip_info.peak_offpeak
+			peak_offpeak: trip_info.peak_offpeak,
+			trip_stops: trip_stops
 		};
 	});
 
