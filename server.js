@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 const gtfs = require('gtfs');
-var moment = require('moment');
+var moment = require('moment-timezone');
 const config = {
 	mongoUrl: 'mongodb://localhost:27017/gtfs',
 	agencies: [
@@ -58,7 +58,9 @@ app.get('/stops', (req, res) => {
 // Get Service ID For today
 app.get('/serviceid', (req, res) => {
 	const date = new Date();
-	const currentDate = moment(date).format('YYYYMMDD');
+	const currentDate = moment(date)
+		.tz('America/New_York')
+		.format('YYYYMMDD');
 	gtfs
 		.getCalendarDates({
 			date: currentDate
@@ -70,8 +72,11 @@ app.get('/serviceid', (req, res) => {
 
 app.get('/stoptimes/:stop_id', (req, res) => {
 	const time = new Date();
-	const currentTime = moment(time).format('HH:mm:ss');
+	const currentTime = moment(time)
+		.tz('America/New_York')
+		.format('HH:mm:ss');
 	const offsetTime = moment(time)
+		.tz('America/New_York')
 		.add(60, 'm')
 		.format('HH:mm:ss');
 	gtfs
@@ -136,3 +141,85 @@ app.get('/routes/:route_id', (req, res) => {
 			res.send(routes);
 		});
 });
+
+/*
+- Get Service ID from current day
+- Get Trips From Service ID
+- Get Stop Times By Current Stop
+- Filter Stop Times By Trip ID
+- Filter Stop Times By Destination, with destination stop_sequence greater than origin stop_sequence integer
+*/
+
+app.get('/schedule/:stop_id/:destination_id', (req, res) => {
+	getServiceIdForToday()
+		.then(service_id => getTripsByServiceId(service_id))
+		.then(trips =>
+			getStopTimesByCurrentStopAndFilter(
+				trips,
+				req.params.stop_id,
+				req.params.destination_id
+			)
+		)
+		.then(trips => {
+			res.json(trips);
+		});
+});
+
+const getServiceIdForToday = () => {
+	const today = moment(new Date())
+		.tz('America/New_York')
+		.format('YYYYMMDD');
+	return gtfs
+		.getCalendarDates({
+			date: today
+		})
+		.then(data => {
+			return data[0].service_id;
+		});
+};
+
+const getTripsByServiceId = service_id => {
+	return gtfs.getTrips({
+		agency_key: 'Metro-North Railroad',
+		service_id: service_id
+	});
+};
+
+const getStopTimesByCurrentStopAndFilter = (trips, stop_id, destination_id) => {
+	// Get Stop Times From Origin Stop
+	return (
+		gtfs
+			.getStoptimes({
+				agency_key: 'Metro-North Railroad',
+				stop_id: stop_id
+			})
+			// Filter Stop Times To Only Include Trips For Current Day
+			.then(data => {
+				const filteredData = data.filter(stop => {
+					return trips.some(e => e.trip_id === stop.trip_id);
+				});
+				return filteredData;
+			})
+			// Filter Stop Times To Only Include Trips To Destination
+			.then(data => {
+				return gtfs
+					.getStoptimes({
+						agency_key: 'Metro-North Railroad',
+						stop_id: destination_id
+					})
+					.then(destination_data => {
+						const filteredData = data.filter(stop => {
+							return destination_data.some(
+								e =>
+									e.trip_id === stop.trip_id &&
+									e.stop_sequence > stop.stop_sequence
+							);
+						});
+						filteredData.sort(
+							(a, b) => a.arrival_timestamp - b.arrival_timestamp
+						);
+						return filteredData;
+					});
+			})
+	);
+};
