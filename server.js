@@ -4,6 +4,7 @@ const express = require('express');
 const app = express();
 const gtfs = require('gtfs');
 var moment = require('moment-timezone');
+var schedule = require('node-schedule');
 const config = {
 	mongoUrl: 'mongodb://localhost:27017/gtfs',
 	agencies: [
@@ -19,7 +20,6 @@ const mongoose = require('mongoose');
 const db = mongoose.connection;
 const methodOverride = require('method-override');
 app.use(methodOverride('_method'));
-// app.use(express.static('public'));
 app.use(express.urlencoded({ extended: false }));
 
 // RUN SERVER / DATABASE
@@ -31,15 +31,26 @@ db.on('error', err => console.log(err.message));
 db.on('connected', () => console.log('mongo connected'));
 db.on('disconnected', () => console.log('mongo disconnected'));
 
-// IMPORT GTFS DATA, can probably run once a day or week
-// gtfs
-// 	.import(config)
-// 	.then(() => {
-// 		console.log('Import Successful');
-// 	})
-// 	.catch(err => {
-// 		console.error(err);
-// 	});
+// IMPORT GTFS DATA
+const updateGTFSdata = () => {
+	gtfs
+		.import(config)
+		.then(() => {
+			console.log('Imported GTFS data successfully');
+		})
+		.catch(err => {
+			console.error(err);
+		});
+};
+
+// Set Up GTFS Data Import on a recurring schedule (configured to be daily at 1:30am)
+const gtfsImportSchedule = schedule.scheduleJob(
+	{ hour: 1, minute: 30 },
+	function() {
+		console.log('Updating GTFS data...');
+		updateGTFSdata();
+	}
+);
 
 // Get Train Stops
 app.get('/stops', (req, res) => {
@@ -80,19 +91,14 @@ app.get('/stoptimes/:stop_id', (req, res) => {
 		.add(60, 'm')
 		.format('HH:mm:ss');
 	gtfs
-		.getStoptimes(
-			{
-				agency_key: 'Metro-North Railroad',
-				stop_id: req.params.stop_id,
-				departure_time: {
-					$gt: currentTime,
-					$lt: offsetTime
-				}
+		.getStoptimes({
+			agency_key: 'Metro-North Railroad',
+			stop_id: req.params.stop_id,
+			departure_time: {
+				$gt: currentTime,
+				$lt: offsetTime
 			}
-			// {
-			// 	sort: { departure_time: 1 }
-			// }
-		)
+		})
 		.then(stoptimes => {
 			res.send(stoptimes);
 		});
