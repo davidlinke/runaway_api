@@ -1,4 +1,6 @@
+//////////////////////////////////////////////////
 // SETUP
+//////////////////////////////////////////////////
 require('dotenv').config();
 const express = require('express');
 const app = express();
@@ -22,7 +24,6 @@ const methodOverride = require('method-override');
 app.use(methodOverride('_method'));
 app.use(express.urlencoded({ extended: false }));
 
-// RUN SERVER / DATABASE
 app.listen(port, () => {
 	console.log(`Running on port ${port}`);
 });
@@ -31,7 +32,9 @@ db.on('error', err => console.log(err.message));
 db.on('connected', () => console.log('mongo connected'));
 db.on('disconnected', () => console.log('mongo disconnected'));
 
-// Import GTFS Data
+//////////////////////////////////////////////////
+// IMPORT GTFS DATA
+//////////////////////////////////////////////////
 const updateGTFSdata = () => {
 	gtfs
 		.import(config)
@@ -52,127 +55,43 @@ const gtfsImportSchedule = schedule.scheduleJob(
 	}
 );
 
-// Get Train Stops
-app.get('/stops', (req, res) => {
-	gtfs
-		.getStops(
-			{
-				agency_key: 'Metro-North Railroad'
-			},
-			{ _id: 0, stop_id: 1, stop_name: 1 }
-		)
-		.then(stops => {
-			res.send(stops);
-		});
-});
+//////////////////////////////////////////////////
+// ROUTES
+//////////////////////////////////////////////////
 
-// Get Service ID For today
-app.get('/serviceid', (req, res) => {
-	const date = new Date();
-	const currentDate = moment(date)
-		.tz('America/New_York')
-		.format('YYYYMMDD');
-	gtfs
-		.getCalendarDates({
-			date: currentDate
-		})
-		.then(calendars => {
-			res.send(calendars);
-		});
-});
+// Primary Schedule Route
+//
+// Requires two parameters, origin_id and destination_id
+//
+// Steps:
+// - Get Service ID from current day
+// - Get Trips From Service ID
+// - Get Stop Times By Current Stop
+// - Filter Stop Times By Trip ID
+// - Filter Stop Times By Destination, with destination stop_sequence greater than origin stop_sequence integer
+// - Format Data, Pulling In Info From Other Sources As Needed
 
-app.get('/stoptimes/:stop_id', (req, res) => {
-	const time = new Date();
-	const currentTime = moment(time)
-		.tz('America/New_York')
-		.format('HH:mm:ss');
-	const offsetTime = moment(time)
-		.tz('America/New_York')
-		.add(60, 'm')
-		.format('HH:mm:ss');
-	gtfs
-		.getStoptimes({
-			agency_key: 'Metro-North Railroad',
-			stop_id: req.params.stop_id,
-			departure_time: {
-				$gt: currentTime,
-				$lt: offsetTime
-			}
-		})
-		.then(stoptimes => {
-			res.send(stoptimes);
-		});
-});
-
-app.get('/trip/:trip_id', (req, res) => {
-	gtfs
-		.getTrips({
-			agency_key: 'Metro-North Railroad',
-			trip_id: req.params.trip_id
-		})
-		.then(trips => {
-			res.send(trips);
-		});
-});
-
-app.get('/tripsbyserviceid/:service_id', (req, res) => {
-	gtfs
-		.getTrips({
-			agency_key: 'Metro-North Railroad',
-			service_id: req.params.service_id
-		})
-		.then(trips => {
-			res.send(trips);
-		});
-});
-
-app.get('/tripstops/:trip_id', (req, res) => {
-	gtfs
-		.getStoptimes({
-			agency_key: 'Metro-North Railroad',
-			trip_id: req.params.trip_id
-		})
-		.then(stoptimes => {
-			res.send(stoptimes);
-		});
-});
-
-app.get('/routes/:route_id', (req, res) => {
-	gtfs
-		.getRoutes({
-			agency_key: 'Metro-North Railroad',
-			route_id: req.params.route_id
-		})
-		.then(routes => {
-			res.send(routes);
-		});
-});
-
-/*
-- Get Service ID from current day
-- Get Trips From Service ID
-- Get Stop Times By Current Stop
-- Filter Stop Times By Trip ID
-- Filter Stop Times By Destination, with destination stop_sequence greater than origin stop_sequence integer
-*/
-
-app.get('/schedule/:stop_id/:destination_id', (req, res) => {
+app.get('/schedule', (req, res) => {
 	getServiceIdForToday()
 		.then(service_id => getTripsByServiceId(service_id))
 		.then(trips =>
 			getStopTimesByCurrentStopAndFilter(
 				trips,
-				req.params.stop_id,
-				req.params.destination_id
+				req.query.origin_id,
+				req.query.destination_id
 			)
 		)
 		.then(trips =>
-			formatStopTimes(trips, req.params.stop_id, req.params.destination_id)
+			formatStopTimes(trips, req.query.origin_id, req.query.destination_id)
 		)
 		.then(trips => {
 			res.json(trips);
 		});
 });
+
+//////////////////////////////////////////////////
+// HELPER FUNCTIONS
+//////////////////////////////////////////////////
 
 const getServiceIdForToday = () => {
 	const today = moment(new Date())
@@ -242,11 +161,13 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 				stop_id: destination_id
 			})
 			.then(stopinfo => {
-				// console.log(stopinfo[0].arrival_time);
 				return {
 					arrival_time: stopinfo[0].arrival_time,
 					arrival_timestamp: stopinfo[0].arrival_timestamp
 				};
+			})
+			.catch(function(err) {
+				console.log('error: ', err);
 			});
 	};
 
