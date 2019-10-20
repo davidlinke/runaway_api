@@ -27,10 +27,13 @@ app.use(express.urlencoded({ extended: false }));
 app.listen(port, () => {
 	console.log(`Running on port ${port}`);
 });
-mongoose.connect(config.mongoUrl, { useNewUrlParser: true });
+mongoose.connect(config.mongoUrl, {
+	useNewUrlParser: true,
+	useUnifiedTopology: true
+});
 db.on('error', err => console.log(err.message));
-db.on('connected', () => console.log('mongo connected'));
-db.on('disconnected', () => console.log('mongo disconnected'));
+db.on('connected', () => console.log('Connected to Mongo'));
+db.on('disconnected', () => console.log('Disconnected from Mongo'));
 
 //////////////////////////////////////////////////
 // IMPORT GTFS DATA
