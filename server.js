@@ -5,8 +5,9 @@ require('dotenv').config();
 const express = require('express');
 const app = express();
 const gtfs = require('gtfs');
-var moment = require('moment-timezone');
-var schedule = require('node-schedule');
+const axios = require('axios');
+const moment = require('moment-timezone');
+const schedule = require('node-schedule');
 const config = {
 	mongoUrl: 'mongodb://localhost:27017/gtfs',
 	agencies: [
@@ -59,6 +60,35 @@ const gtfsImportSchedule = schedule.scheduleJob(
 );
 
 //////////////////////////////////////////////////
+// GET REALTIME INFO
+//////////////////////////////////////////////////
+let currentData = null;
+
+const updateRealtimeData = () => {
+	try {
+		axios
+			.get(
+				`https://mnorth.prod.acquia-sites.com/wse/gtfsrtwebapi/v1/gtfsrt/${process.env.MTA_KEY}/getfeed`
+			)
+			.then(response => {
+				currentData = response.data;
+				console.log('Updated realtime data successfully');
+			})
+			.catch(err => {
+				console.log(err);
+			});
+	} catch (err) {
+		console.log(err);
+	}
+};
+
+// Update realtime data on start and every minute
+updateRealtimeData();
+setInterval(() => {
+	updateRealtimeData();
+}, 60 * 1000);
+
+//////////////////////////////////////////////////
 // ROUTES
 //////////////////////////////////////////////////
 
@@ -89,6 +119,21 @@ app.get('/schedule', (req, res) => {
 		)
 		.then(trips => {
 			res.json(trips);
+		});
+});
+
+app.get('/realtime', (req, res) => {
+	res.json(currentData);
+});
+
+app.get('/trip/:trip_id', (req, res) => {
+	gtfs
+		.getTrips({
+			agency_key: 'Metro-North Railroad',
+			trip_id: req.params.trip_id
+		})
+		.then(trips => {
+			res.send(trips);
 		});
 });
 
@@ -174,7 +219,7 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 			});
 	};
 
-	const getTripInfo = trip_id => {
+	const getTripInfo = (trip_id, stop_id) => {
 		let info = {};
 		return gtfs
 			.getTrips({
@@ -193,6 +238,10 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 			})
 			.then(routeInfo => {
 				return { ...info, ...routeInfo[0] };
+			})
+			.then(allInfo => {
+				const delay = getTripDelay(allInfo.trip_short_name, stop_id);
+				return { ...allInfo, delay: delay };
 			});
 	};
 
@@ -213,6 +262,26 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 		);
 	};
 
+	const getTripDelay = (trip_short_name, stop_id) => {
+		let delay = 0;
+		if (currentData != null) {
+			currentData.entity.forEach(trip => {
+				if (trip.id === trip_short_name) {
+					// console.log('Match found for ' + trip_short_name);
+					trip.trip_update.stop_time_update.forEach(stop => {
+						if (stop.stop_id === stop_id && stop.departure.delay != 0) {
+							// console.log(
+							// 	`ID ${trip.id}, DELAY AT STOP ${stop_id}, ${stop.departure.delay} SEC`
+							// );
+							delay = stop.departure.delay;
+						}
+					});
+				}
+			});
+		}
+		return delay;
+	};
+
 	const calculateDuration = (start_time, end_time) => {
 		if (start_time < end_time) {
 			return end_time - start_time;
@@ -223,7 +292,7 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 
 	const promises = data.map(async trip => {
 		const stop_times = await getTripStopTime(trip);
-		const trip_info = await getTripInfo(trip.trip_id);
+		const trip_info = await getTripInfo(trip.trip_id, trip.stop_id);
 		const trip_stops = await getTripStops(trip.trip_id);
 
 		return {
@@ -247,6 +316,7 @@ const formatStopTimes = async (data, stop_id, destination_id) => {
 			stop_sequence: trip.stop_sequence,
 			wheelchair_accessible: trip_info.wheelchair_accessible,
 			peak_offpeak: trip_info.peak_offpeak,
+			delay: trip_info.delay,
 			trip_stops: trip_stops
 		};
 	});
