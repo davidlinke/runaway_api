@@ -72,7 +72,7 @@ const updateRealtimeData = () => {
 			)
 			.then(response => {
 				currentData = response.data;
-				console.log('Updated realtime data successfully');
+				// console.log('Updated realtime data successfully');
 			})
 			.catch(err => {
 				console.log(err);
@@ -119,21 +119,6 @@ app.get('/schedule', (req, res) => {
 		)
 		.then(trips => {
 			res.json(trips);
-		});
-});
-
-app.get('/realtime', (req, res) => {
-	res.json(currentData);
-});
-
-app.get('/trip/:trip_id', (req, res) => {
-	gtfs
-		.getTrips({
-			agency_key: 'Metro-North Railroad',
-			trip_id: req.params.trip_id
-		})
-		.then(trips => {
-			res.send(trips);
 		});
 });
 
